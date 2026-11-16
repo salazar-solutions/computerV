@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visión por computadora</title>
+<style>
+  :root { color-scheme: dark; --bg:#0f1220; --card:#181c30; --acc:#4cc9f0; --ok:#4ade80; --bad:#f87171; --warn:#fbbf24; --mut:#8b93b0; --line:#262b45; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:#e8ebf7; line-height:1.45; }
+  header { padding:14px 24px; border-bottom:1px solid var(--line); }
+  h1 { margin:0; font-size:1.15rem; } h2 { margin:0 0 6px; font-size:1.05rem; } h3 { margin:14px 0 4px; font-size:.95rem; }
+  main { max-width:1050px; margin:0 auto; padding:16px; display:grid; gap:16px; grid-template-columns: 1fr 1fr; }
+  .steps { grid-column:1/-1; display:flex; gap:8px; flex-wrap:wrap; }
+  .step { flex:1; min-width:210px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:.9rem; }
+  .step b { display:block; } .step.done { border-color:var(--ok); } .step.now { border-color:var(--acc); box-shadow:0 0 0 1px var(--acc); }
+  .step .n { display:inline-block; width:22px; height:22px; border-radius:50%; background:#262b45; text-align:center; line-height:22px; margin-right:6px; font-size:.8rem; }
+  .step.done .n { background:var(--ok); color:#08111f; }
+  @media (max-width:760px){ main { grid-template-columns:1fr; } }
+  .card { background:var(--card); border-radius:12px; padding:16px; }
+  .cam { position:relative; background:#000; border-radius:8px; min-height:200px; }
+  video, #snap { width:100%; border-radius:8px; display:block; }
+  #empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:20px; color:var(--mut); }
+  #overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  nav { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  button { background:#262b45; color:#e8ebf7; border:0; padding:9px 14px; border-radius:8px; cursor:pointer; font-size:.9rem; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  nav button.on, button.primary { background:var(--acc); color:#08111f; font-weight:600; }
+  input, select { background:#0f1220; color:#e8ebf7; border:1px solid #333a5c; border-radius:8px; padding:9px; margin:4px 0; width:100%; }
+  label { font-size:.85rem; color:var(--mut); display:block; margin-top:8px; }
+  .row { display:flex; gap:8px; margin-top:8px; } .row > * { flex:1; }
+  .msg { margin-top:12px; padding:12px; border-radius:8px; background:#0f1220; min-height:3em; white-space:pre-wrap; border-left:4px solid var(--line); }
+  .msg.ok { border-color:var(--ok); } .msg.bad { border-color:var(--bad); } .msg.info { border-color:var(--acc); }
+  .mut { color:var(--mut); font-size:.85rem; }
+  .tip { background:#1d2340; border-radius:8px; padding:9px 11px; font-size:.85rem; margin-top:10px; color:#c7cdf0; }
+  .warn { background:#3a2f12; color:#fde7a1; }
+  ol { margin:6px 0 6px 18px; padding:0; } li { margin:3px 0; }
+  ul.people { list-style:none; padding:0; margin:8px 0; } ul.people li { display:flex; justify-content:space-between; align-items:center; background:#0f1220; padding:6px 10px; border-radius:8px; }
+  .panel { display:none; } .panel.on { display:block; }
+  .log { font-family: ui-monospace, monospace; font-size:.8rem; background:#0a0d18; border-radius:8px; padding:8px; margin-top:8px; max-height:140px; overflow:auto; }
+</style>
+</head>
+<body>
+<header><h1>Visión por computadora · Asistencia · Login facial · Hogar inteligente</h1></header>
+<main>
+  <div class="steps" id="steps">
+    <div class="step" id="s1"><b><span class="n">1</span>Activa la cámara</b><span class="mut">Pulsa «Activar cámara» (o sube una foto).</span></div>
+    <div class="step" id="s2"><b><span class="n">2</span>Registra personas</b><span class="mut">Pestaña «Registro»: nombre + rostro. Mínimo 1 persona.</span></div>
+    <div class="step" id="s3"><b><span class="n">3</span>Prueba un proyecto</b><span class="mut">Pestañas 1, 2 y 3. Cada una explica qué hacer.</span></div>
+  </div>
+
+  <section class="card">
+    <h2>Cámara</h2>
+    <div class="cam">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="snap" hidden></canvas>
+      <canvas id="overlay"></canvas>
+      <div id="empty">Aún no hay imagen.<br>Pulsa «Activar cámara» y acepta el permiso del navegador.</div>
+    </div>
+    <div class="row">
+      <button id="camBtn" class="primary">Activar cámara</button>
+      <button id="fileBtn">Subir una foto</button>
+    </div>
+    <input type="file" id="file" accept="image/*" hidden>
+    <div class="tip">💡 Para mejores resultados: buena luz de frente, rostro centrado y sin gorra ni lentes oscuros. Debe verse <b>solo una persona</b> al registrar.</div>
+    <div class="tip" id="camHint">Todas las acciones usan lo que se ve ahora en la cámara (o la foto subida).</div>
+  </section>
+
+  <section class="card">
+    <nav id="tabs">
+      <button data-t="people" class="on">Registro</button>
+      <button data-t="att">1 · Asistencia</button>
+      <button data-t="login">2 · Login</button>
+      <button data-t="home">3 · Hogar</button>
+    </nav>
+
+    <div class="panel on" id="people">
+      <h2>Registrar una persona</h2>
+      <p class="mut">Necesario para los tres proyectos: el sistema solo reconoce a quien esté registrado.</p>
+      <ol>
+        <li>Activa la cámara y mira de frente.</li>
+        <li>Escribe el nombre (será también el usuario del login).</li>
+        <li>Elige si es adulto o niño (lo usa el Hogar inteligente).</li>
+        <li>Pulsa «Registrar rostro actual». <b>Repite 2-3 veces</b> girando un poco la cabeza: mejora la precisión.</li>
+      </ol>
+      <label for="pname">Nombre</label>
+      <input id="pname" placeholder="Ej. Ana" autocomplete="off">
+      <label for="prole">Perfil</label>
+      <select id="prole"><option value="adult">Adulto</option><option value="child">Niño</option></select>
+      <button class="primary" id="enrollBtn" style="margin-top:10px;width:100%">Registrar rostro actual</button>
+      <h3>Personas registradas</h3>
+      <ul class="people" id="plist"></ul>
+    </div>
+
+    <div class="panel" id="att">
+      <h2>1 · Asistencia automática</h2>
+      <p class="mut">Reconoce a las personas frente a la cámara y marca su asistencia del día (una sola vez por persona).</p>
+      <div class="tip warn" id="attWarn" hidden>Primero registra al menos una persona en la pestaña «Registro».</div>
+      <ol>
+        <li>Colócate frente a la cámara.</li>
+        <li>Pulsa «Escanear una vez», o «Auto» para escanear solo cada 2 segundos.</li>
+        <li>Los rostros se rodean con un recuadro verde (reconocido) o rojo (desconocido).</li>
+        <li>Abajo ves quién está presente y quién falta.</li>
+      </ol>
+      <div class="row">
+        <button class="primary" id="scanBtn">Escanear una vez</button>
+        <button id="autoBtn">Auto: apagado</button>
+      </div>
+      <div class="row">
+        <button id="notifyBtn">Avisar a ausentes (simulado)</button>
+        <button id="resetAttBtn">Borrar asistencia de hoy</button>
+      </div>
+      <div id="attlist"></div>
+    </div>
+
+    <div class="panel" id="login">
+      <h2>2 · Login con tu rostro</h2>
+      <p class="mut">Entras sin contraseña: tu cara debe coincidir con la que registraste.</p>
+      <div class="tip warn" id="loginWarn" hidden>Primero registra tu rostro en la pestaña «Registro».</div>
+      <ol>
+        <li>Elige tu usuario.</li>
+        <li>Mira de frente a la cámara (solo tú en la imagen).</li>
+        <li>Pulsa «Iniciar sesión». Si tu rostro no coincide, se deniega el acceso.</li>
+      </ol>
+      <label for="luser">Usuario</label>
+      <select id="luser"></select>
+      <button class="primary" id="loginBtn" style="margin-top:10px;width:100%">Iniciar sesión con mi rostro</button>
+      <div id="session" class="tip" hidden></div>
+    </div>
+
+    <div class="panel" id="home">
+      <h2>3 · Hogar inteligente</h2>
+      <p class="mut">Simula llegar a casa: reconoce quién eres y activa acciones según seas adulto o niño (son simuladas, no hay dispositivos reales).</p>
+      <div class="tip warn" id="homeWarn" hidden>Primero registra a alguien (adulto y/o niño) en la pestaña «Registro».</div>
+      <ol>
+        <li>Colócate frente a la cámara.</li>
+        <li>Pulsa «Detectar persona».</li>
+        <li>Verás las acciones activadas (luces, música, termostato). También se imprimen en la consola del servidor.</li>
+      </ol>
+      <button class="primary" id="homeBtn" style="width:100%">Detectar persona</button>
+      <div class="log" id="homeLog">Sin eventos todavía.</div>
+    </div>
+
+    <div class="msg info" id="msg">👋 Empieza por el paso 1: pulsa «Activar cámara».</div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const video = $('video'), snap = $('snap'), overlay = $('overlay');
+let uploaded = null, camOn = false, auto = null, people = [];
+
+function say(text, cls) { const m = $('msg'); m.textContent = text; m.className = 'msg ' + (cls || 'info'); }
+const hasSource = () => camOn || !!uploaded;
+
+function refreshUI() {
+  const n = people.length;
+  $('s1').className = 'step ' + (hasSource() ? 'done' : 'now');
+  $('s2').className = 'step ' + (n ? 'done' : (hasSource() ? 'now' : ''));
+  $('s3').className = 'step ' + (hasSource() && n ? 'now' : '');
+  $('empty').hidden = hasSource();
+  ['attWarn', 'loginWarn', 'homeWarn'].forEach(id => $(id).hidden = n > 0);
+  ['scanBtn', 'autoBtn', 'loginBtn', 'homeBtn', 'enrollBtn'].forEach(id => {
+    const needsPeople = id !== 'enrollBtn';
+    $(id).disabled = !hasSource() || (needsPeople && !n);
+  });
+  $('notifyBtn').disabled = !n; $('resetAttBtn').disabled = !n;
+  $('luser').innerHTML = n ? people.map(p => `<option>${p.name}</option>`).join('') : '<option value="">(sin usuarios)</option>';
+  $('camHint').textContent = !hasSource() ? 'Los botones se activan cuando haya cámara o foto.' :
+    (uploaded ? 'Usando la foto subida. Para video en vivo, pulsa «Activar cámara».' : 'Cámara en vivo activa.');
+}
+
+$('camBtn').onclick = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+    video.srcObject = stream; uploaded = null; camOn = true;
+    video.style.display = 'block'; snap.hidden = true;
+    say('✔ Cámara activa. Siguiente paso: pestaña «Registro» → escribe tu nombre y registra tu rostro.', 'ok');
+  } catch (e) {
+    say('No se pudo abrir la cámara (' + e.message + ').\nRevisa que concediste el permiso en el navegador o usa «Subir una foto».', 'bad');
+  }
+  refreshUI();
+};
+$('fileBtn').onclick = () => $('file').click();
+$('file').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    uploaded = r.result; video.style.display = 'none';
+    const img = new Image();
+    img.onload = () => { snap.width = img.width; snap.height = img.height; snap.getContext('2d').drawImage(img, 0, 0); snap.hidden = false; };
+    img.src = uploaded; overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
+    say('✔ Foto cargada. Ahora puedes registrar o reconocer con esta imagen.', 'ok'); refreshUI();
+  };
+  r.readAsDataURL(f); e.target.value = '';
+};
+
+function frame() {
+  if (uploaded) return uploaded;
+  if (!video.videoWidth) throw new Error('La cámara aún no está lista. Espera un segundo o sube una foto.');
+  const c = document.createElement('canvas'); c.width = video.videoWidth; c.height = video.videoHeight;
+  c.getContext('2d').drawImage(video, 0, 0);
+  return c.toDataURL('image/jpeg', 0.9);
+}
+
+async function api(path, method, body) {
+  const r = await fetch(path, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || r.statusText);
+  return j;
+}
+
+function draw(faces) {
+  if (uploaded) { overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height); return; }
+  overlay.width = video.clientWidth; overlay.height = video.clientHeight;
+  const ctx = overlay.getContext('2d'); ctx.clearRect(0, 0, overlay.width, overlay.height);
+  const sx = overlay.width / video.videoWidth, sy = overlay.height / video.videoHeight;
+  ctx.lineWidth = 3; ctx.font = '15px system-ui';
+  faces.forEach(f => {
+    ctx.strokeStyle = ctx.fillStyle = f.name ? '#4ade80' : '#f87171';
+    ctx.strokeRect(f.box.x * sx, f.box.y * sy, f.box.w * sx, f.box.h * sy);
+    ctx.fillText(f.name || 'Desconocido', f.box.x * sx, Math.max(16, f.box.y * sy - 6));
+  });
+}
+
+async function run(fn) { try { await fn(); } catch (e) { say('✘ ' + e.message, 'bad'); } }
+
+async function loadPeople() {
+  people = await api('/api/people', 'GET');
+  $('plist').innerHTML = people.map(p => `<li><span>${p.name} <span class="mut">· ${p.role === 'adult' ? 'adulto' : 'niño'} · ${p.samples} foto${p.samples > 1 ? 's' : ''}${p.samples < 2 ? ' (registra 1-2 más)' : ''}</span></span><button data-del="${p.name}" title="Eliminar">✕</button></li>`).join('')
+    || '<li class="mut">Nadie registrado todavía.</li>';
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => run(async () => {
+    if (!confirm('¿Eliminar a ' + b.dataset.del + '?')) return;
+    await api('/api/people/' + encodeURIComponent(b.dataset.del), 'DELETE'); await loadPeople();
+  }));
+  refreshUI();
+}
+
+$('enrollBtn').onclick = () => run(async () => {
+  const name = $('pname').value.trim();
+  if (!name) { $('pname').focus(); throw new Error('Escribe un nombre antes de registrar.'); }
+  say('Analizando rostro… (la primera vez tarda más porque se descarga el modelo)');
+  const r = await api('/api/people', 'POST', { name, role: $('prole').value, image: frame() });
+  await loadPeople();
+  say(`✔ ${r.name} registrado/a (${r.samples} foto${r.samples > 1 ? 's' : ''}).\n` + (r.samples < 3
+    ? 'Registra 1-2 fotos más girando un poco la cabeza para mayor precisión.'
+    : 'Listo. Ahora prueba las pestañas 1, 2 o 3.'), 'ok');
+});
+
+async function scan(quiet) {
+  const r = await api('/api/attendance/scan', 'POST', { image: frame() });
+  draw(r.faces);
+  const lines = r.faces.map(f => f.name ? `✔ ${f.name}${f.newly_marked ? ' — asistencia registrada' : ' — ya estaba registrado/a hoy'}` : '✘ Rostro desconocido (no registrado)');
+  say(lines.join('\n') || 'No se ve ningún rostro. Acércate y mejora la luz.', r.faces.some(f => f.name) ? 'ok' : 'bad');
+  await refreshAtt();
+}
+$('scanBtn').onclick = () => run(() => { say('Escaneando…'); return scan(); });
+$('autoBtn').onclick = () => {
+  if (auto) { clearInterval(auto); auto = null; $('autoBtn').textContent = 'Auto: apagado'; say('Escaneo automático detenido.'); return; }
+  $('autoBtn').textContent = 'Auto: encendido (clic para parar)'; let busy = false;
+  auto = setInterval(async () => { if (busy) return; busy = true; try { await scan(); } catch (e) { say('✘ ' + e.message, 'bad'); } busy = false; }, 2000);
+};
+async function refreshAtt() {
+  const a = await api('/api/attendance', 'GET');
+  $('attlist').innerHTML = `<h3>Presentes hoy (${a.date})</h3><ul class="people">${a.present.map(r => `<li>${r.name}<span class="mut">${r.time}</span></li>`).join('') || '<li class="mut">Nadie todavía</li>'}</ul><h3>Ausentes</h3><ul class="people">${a.absent.map(n => `<li>${n}</li>`).join('') || '<li class="mut">Ninguno</li>'}</ul>`;
+}
+$('notifyBtn').onclick = () => run(async () => { const r = await api('/api/attendance/notify-absent', 'POST'); say(r.notified.length ? 'Aviso simulado enviado a tutores/supervisores de: ' + r.notified.join(', ') : 'Todos asistieron; no hay a quién avisar.', 'ok'); });
+$('resetAttBtn').onclick = () => run(async () => { if (!confirm('¿Borrar la asistencia de hoy?')) return; await api('/api/attendance', 'DELETE'); await refreshAtt(); say('Asistencia de hoy borrada. Puedes volver a escanear.', 'ok'); });
+
+$('loginBtn').onclick = () => run(async () => {
+  const u = $('luser').value; if (!u) throw new Error('Elige un usuario.');
+  say('Verificando rostro…');
+  const r = await api('/api/login/verify', 'POST', { username: u, image: frame() });
+  $('session').hidden = false;
+  $('session').innerHTML = `🔓 Sesión iniciada como <b>${r.user}</b>`;
+  say(`✔ Acceso concedido. Bienvenido/a, ${r.user}. (similitud: distancia ${r.distance.toFixed(3)}, el límite es 0.300)`, 'ok');
+});
+
+$('homeBtn').onclick = () => run(async () => {
+  say('Detectando…');
+  const r = await api('/api/home/scan', 'POST', { image: frame() });
+  draw([r]);
+  const head = r.name ? `Hola, ${r.name} (${r.role === 'adult' ? 'adulto' : 'niño'})` : 'Persona desconocida';
+  say(head + '\n' + r.actions.map(a => '• ' + a).join('\n'), r.name ? 'ok' : 'bad');
+  const log = $('homeLog'); if (log.textContent.startsWith('Sin eventos')) log.textContent = '';
+  log.textContent = `[${new Date().toLocaleTimeString()}] ${head}\n` + r.actions.map(a => '   → ' + a).join('\n') + '\n' + log.textContent;
+});
+
+$('tabs').onclick = e => {
+  const t = e.target.dataset.t; if (!t) return;
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b === e.target));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('on', p.id === t));
+  if (t === 'att') run(refreshAtt);
+};
+refreshUI(); run(loadPeople);
+</script>
+</body>
+</html>

@@ -30,3 +30,10 @@ data/users_db.json
 .vscode/
 *.swp
 *.swo
+
+# Datos locales de los proyectos
+data/faces.json
+data/attendance.csv
+
+# Páginas guardadas del curso
+*Hybridge*.html
